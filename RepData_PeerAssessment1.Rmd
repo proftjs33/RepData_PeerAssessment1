@@ -1,0 +1,192 @@
+---
+title: "RepData_PeerAssessment1"
+author: "tjs"
+date: "Monday, April 13, 2015"
+output: html_document
+---
+### A. Load and preprocess the data
+```{r setoptions, echo=FALSE}
+library(knitr)
+opts_chunk$set(echo=FALSE,results="hide")
+setwd("~/GitHub/RepData_PeerAssessment1")
+```
+1. Read the acvity data.
+
+```{r readData,echo=TRUE}
+data <- read.csv("data/activity.csv")
+```
+2. For this part of the assignment, ignore the missing values in the dataset.
+
+```{r ignoreNA,echo=TRUE}
+data.noNA <- na.omit(data)
+```
+### B. What is mean total number of steps taken per day?
+1. Calculate the total number of steps taken per day and plot  a histogram of the total number of steps taken each day.
+
+```{r getstepsperday}
+getStepsPerDay <- function(myData){
+    myData$date<-as.character(myData$date)
+    myDataOut<-data.frame()
+    n<-nrow(myData)
+    myDate<-myData$date[1]
+    allDates<-c(myDate)
+    allSteps<-c(NULL)
+    nSteps<-0
+    nDays<-1
+    for(i in 1:n){
+        newDate<-myData$date[i]
+        if( newDate != myDate){
+            # different day, start over
+            nDays<- nDays+1
+            allDates<-c(allDates,newDate)
+            allSteps<-c(allSteps,nSteps)
+            myDate<-newDate
+            nSteps<-myData[i,1]
+        } else {
+            # same day, add more steps
+            nSteps<-nSteps + myData[i,1]
+        }
+    }
+    allSteps<-c(allSteps,nSteps)
+    myDataOut<-data.frame(allDates,allSteps)
+}
+```
+```{r histogram_noNA,echo=TRUE,fig.height=4,results='markup'}
+myDataOut<-getStepsPerDay(data.noNA)
+with(myDataOut,hist(allSteps,breaks=15,main="Histogram of Total Steps Each Day",col="red",labels=FALSE))
+```
+
+2. Calculate and report the mean and median of the total number of steps taken per day.
+
+```{r mean_noNA,echo=TRUE,results='markup'}
+mean.noNA<-mean(myDataOut$allSteps)
+print(c("Mean of Total Number of Steps per Day Ignore NA= ",mean.noNA),quote=FALSE)
+```
+ 
+```{r median_noNA,echo=TRUE,results='markup'}
+median.noNA<-median(myDataOut$allSteps)
+print(c("Median of Total Number of Steps per Day Ignore NA = ",median.noNA),quote=FALSE)
+```
+
+### C. What is the average daily activity pattern?
+
+1. Make a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+
+```{r getDataForTimeSeriesPlot}
+int2Min<-function(x){
+    # converts integer mss to minutes
+    m<-floor(x/100)
+    ss<-x-m*100
+    m*60+ss
+}
+getTotalStepsPerInterval<-function(myData){
+    #myData$date<-as.character(myData$date)
+    myDataOut<-data.frame()
+    n<-nrow(myData)
+    myData<-myData[order(myData$interval),]
+    allSteps<-c(NULL)
+    nSteps<-0
+    myInterval<-myData$interval[1]
+    myMin<-int2Min(myInterval)
+    allIntervals<-c(myInterval)
+    allMin<-c(myMin)
+    for(i in 1:n){
+        newInterval<-myData$interval[i]
+        if( newInterval != myInterval){
+        # different interval, start over
+            allIntervals<-c(allIntervals,newInterval)
+            allSteps<-c(allSteps,nSteps)
+            nSteps<-myData[i,1]
+            myInterval<-newInterval
+            allMin<-c(allMin,int2Min(myInterval))
+         } else {
+        # same interval, add more steps
+            nSteps<-nSteps + myData[i,1]
+        }
+    }
+    allSteps<-c(allSteps,nSteps)
+    myDataOut<-data.frame(allIntervals,allMin,allSteps)        
+}
+getNumberOfDays<-function(myData){
+    myData$date<-as.character(myData$date)
+    nDays<-1
+    n<-nrow(myData)
+    myDay<-myData$date[1]
+    for(i in 1:n){
+        newDay<-myData$date[i]
+        if(newDay != myDay){
+            nDays<-nDays+1
+            myDay<-newDay
+        }
+    }
+    nDays
+}
+getAvgStepsPerInt<-function(myData){
+    totalStepsPerInt<-getTotalStepsPerInterval(myData)
+    nDays<-getNumberOfDays(myData)
+    avgStepsPerInt<-totalStepsPerInt
+    avgStepsPerInt$allSteps<-avgStepsPerInt$allSteps/nDays
+    avgStepsPerInt
+}
+```
+```{r showCodeForTimeSeries,echo=TRUE,results='markup'}
+avgStepsPerInt<-getAvgStepsPerInt(data.noNA)
+with(avgStepsPerInt,plot(allSteps ~ allMin,type="l",main="Time Series Plot of Average Steps vs Time in Minutes"))
+```
+
+2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+```{r intervalHavingMaxSteps,echo=TRUE,results='markup'}
+avgStepsPerInt[avgStepsPerInt$allSteps==max(avgStepsPerInt$allSteps),]
+```
+
+###D. Imputing missing values
+
+1. Calculate and report the total number of missing values in the dataset.
+```{r countNA,echo=TRUE,results='markup'}
+sum(is.na(data$steps))
+```
+2. Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+    I will replace the NA by the mean for the 5-minute interval.
+
+3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+```{r replaceNA,echo=TRUE,results='markup'}
+replaceNA<-function(myData){
+    n<-nrow(myData)
+    avgStepsPerInt<-getAvgStepsPerInt(data.noNA)
+    for(i in 1:n)
+        if(is.na(myData$steps[i])){
+            myInterval<-myData$interval[i]
+            myValue<-avgStepsPerInt[avgStepsPerInt$allIntervals==myInterval,3]
+            myData$steps[i]<-myValue
+        }
+    myData
+}
+newData<-replaceNA(data)
+```
+4. Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+```{r newDataHistogram, echo=TRUE,results='markup'}
+newStepsPerDay<- getStepsPerDay(newData)
+with(newStepsPerDay,hist(allSteps,col="blue",breaks=15,main="Histogram of Total Steps Each Day",labels=FALSE))
+mean.addData<-mean(newStepsPerDay$allSteps)
+print(c("Mean of Total Number of Steps per Day with NA Replaced = ",mean.addData),quote=FALSE)
+median.addData<-median(newStepsPerDay$allSteps)
+print(c("Median of Total Number of Steps per Day with NA Replaced = ",median.addData),quote=FALSE)
+
+```
+
+The impact of imputing missing data includes the following.
+
+* Histogram values changed with the highest value increasing significantly.
+```{r compareHist,results='markup'}
+par(mfrow = c(1, 2), mar = c(5, 4, 2, 1))
+with(myDataOut,hist(allSteps,breaks=15,main="Histogram of Total Steps",col="red",labels=FALSE,ylim=c(0,25)))
+with(newStepsPerDay,hist(allSteps,col="blue",breaks=15,main="Histogram of Total Steps",labels=FALSE,ylim=c(0,25)))
+par(mfrow = c(1, 1))
+```
+
+* Although the mean did not change, the median was changed to agree with the mean and is no longer an integer.
+```{r compareMeansandMedians,echo=FALSE,results='markup'}
+print(c("Means, noNA and addData = ",mean.noNA,mean.addData),quote=FALSE)
+print(c("Medians, noNA and addData = ",median.noNA,median.addData),quote=FALSE)
+```
